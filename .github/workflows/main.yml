@@ -1,61 +1,42 @@
-name: Check KVM Support
-
-on:
-  push:
-    branches:
-      - main
-
 jobs:
-  check-kvm:
+  test-kvm:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Show CPU info
-        run: lscpu
-
-      - name: Show Memory info
-        run: free -h
-
       - name: Check if /dev/kvm exists
         run: |
           if [ -e /dev/kvm ]; then
             echo "✅ /dev/kvm exists"
           else
-            echo "::error::❌ /dev/kvm not found"
+            echo "❌ /dev/kvm not found"
             exit 1
           fi
 
-      - name: Check for nested virtualization
+      - name: Check if user can access /dev/kvm
+        run: |
+          echo "Trying: cat /dev/kvm"
+          sudo cat /dev/kvm || echo "❌ Permission denied"
+
+      - name: Check nested virtualization
         run: |
           if [ -f /sys/module/kvm_intel/parameters/nested ]; then
             echo "Nested virtualization (Intel): $(cat /sys/module/kvm_intel/parameters/nested)"
           elif [ -f /sys/module/kvm_amd/parameters/nested ]; then
             echo "Nested virtualization (AMD): $(cat /sys/module/kvm_amd/parameters/nested)"
           else
-            echo "::warning::No nested virtualization parameter found"
+            echo "❌ No nested virtualization config found"
           fi
 
-      - name: Install QEMU and tools
+      - name: Install QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y cpu-checker qemu-system-x86 msr-tools
+          sudo apt-get install -y qemu-system-x86
 
-      - name: Check QEMU version
-        run: qemu-system-x86_64 --version
-
-      - name: Attempt dummy QEMU VM launch
+      - name: Run QEMU without KVM
         run: |
-          echo "Attempting to launch dummy QEMU VM..."
-          qemu-system-x86_64 \
-            -enable-kvm \
-            -m 256 \
-            -nographic \
-            -kernel /dev/zero \
-            -append "console=ttyS0" \
-            -smp 1 \
-            -cpu host \
-            -display none \
-            -nodefaults \
-            || echo "::warning::Dummy VM launch failed (expected)"
+          echo "Running QEMU without -enable-kvm (should work)"
+          qemu-system-x86_64 --version
+
+      - name: Run QEMU with KVM (expected to fail)
+        run: |
+          echo "Running QEMU with -enable-kvm (should fail)"
+          sudo qemu-system-x86_64 -enable-kvm -nographic -vga none -kernel /bin/true || echo "❌ QEMU KVM failed as expected"

@@ -1,7 +1,18 @@
+name: Verify KVM on GitHub Runner
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   test-kvm:
+    name: Test KVM Access on GitHub-Hosted Runner
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Check if /dev/kvm exists
         run: |
           if [ -e /dev/kvm ]; then
@@ -11,19 +22,25 @@ jobs:
             exit 1
           fi
 
-      - name: Check if user can access /dev/kvm
+      - name: Try reading /dev/kvm as current user
         run: |
-          echo "Trying: cat /dev/kvm"
-          sudo cat /dev/kvm || echo "❌ Permission denied"
+          echo "Trying to read /dev/kvm as runner"
+          cat /dev/kvm || echo "❌ Permission denied as expected"
 
-      - name: Check nested virtualization
+      - name: Try reading /dev/kvm with sudo
         run: |
+          echo "Trying to read /dev/kvm with sudo"
+          sudo cat /dev/kvm || echo "❌ Permission denied with sudo (expected)"
+
+      - name: Check nested virtualization support
+        run: |
+          echo "Checking nested virtualization..."
           if [ -f /sys/module/kvm_intel/parameters/nested ]; then
-            echo "Nested virtualization (Intel): $(cat /sys/module/kvm_intel/parameters/nested)"
+            echo "Intel nested: $(cat /sys/module/kvm_intel/parameters/nested)"
           elif [ -f /sys/module/kvm_amd/parameters/nested ]; then
-            echo "Nested virtualization (AMD): $(cat /sys/module/kvm_amd/parameters/nested)"
+            echo "AMD nested: $(cat /sys/module/kvm_amd/parameters/nested)"
           else
-            echo "❌ No nested virtualization config found"
+            echo "❌ No nested virtualization configuration found"
           fi
 
       - name: Install QEMU
@@ -31,12 +48,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86
 
+      - name: Check QEMU version
+        run: |
+          qemu-system-x86_64 --version
+
       - name: Run QEMU without KVM
         run: |
           echo "Running QEMU without -enable-kvm (should work)"
-          qemu-system-x86_64 --version
+          sudo qemu-system-x86_64 -nographic -vga none -kernel /bin/true || echo "⚠️ QEMU without KVM failed (unexpected)"
 
-      - name: Run QEMU with KVM (expected to fail)
+      - name: Run QEMU with -enable-kvm (expected to fail)
         run: |
           echo "Running QEMU with -enable-kvm (should fail)"
-          sudo qemu-system-x86_64 -enable-kvm -nographic -vga none -kernel /bin/true || echo "❌ QEMU KVM failed as expected"
+          sudo qemu-system-x86_64 -enable-kvm -nographic -vga none -kernel /bin/true || echo "❌ QEMU with KVM failed as expected"

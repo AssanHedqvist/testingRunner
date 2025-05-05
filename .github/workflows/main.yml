@@ -1,7 +1,9 @@
 name: Check KVM support
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   check-kvm:

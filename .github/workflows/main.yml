@@ -1,1 +1,42 @@
+name: Check KVM support
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-kvm:
+    runs-on: ubuntu-latest  # byt till 'self-hosted' om det gäller din egen runner
+
+    steps:
+      - name: Check /dev/kvm
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo "/dev/kvm exists ✅"
+          else
+            echo "::error::/dev/kvm not found ❌"
+            exit 1
+          fi
+
+      - name: Check loaded kvm modules
+        run: |
+          lsmod | grep kvm || echo "::warning::KVM modules not loaded"
+
+      - name: Check nested virtualization (Intel)
+        run: |
+          if [ -f /sys/module/kvm_intel/parameters/nested ]; then
+            echo "Nested virt (Intel): $(cat /sys/module/kvm_intel/parameters/nested)"
+          elif [ -f /sys/module/kvm_amd/parameters/nested ]; then
+            echo "Nested virt (AMD): $(cat /sys/module/kvm_amd/parameters/nested)"
+          else
+            echo "::warning::Nested virtualization parameter not found"
+          fi
+
+      - name: Test QEMU + KVM launch
+        run: |
+          if command -v qemu-system-x86_64 > /dev/null; then
+            qemu-system-x86_64 -enable-kvm --version
+          else
+            echo "::error::QEMU not installed"
+            exit 1
+          fi
 

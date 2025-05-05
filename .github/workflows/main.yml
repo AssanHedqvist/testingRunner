@@ -1,4 +1,4 @@
-name: Check KVM support
+name: Check KVM and Runner Specs
 
 on:
   push:
@@ -6,39 +6,71 @@ on:
       - main
 
 jobs:
-  check-kvm:
-    runs-on: ubuntu-latest  # byt till 'self-hosted' om det gäller din egen runner
+  verify-runner:
+    runs-on: ubuntu-latest
 
     steps:
+      - name: Show CPU and Memory Info
+        run: |
+          echo "Memory:"
+          free -h
+          echo ""
+          echo "CPU Info:"
+          lscpu
+
       - name: Check /dev/kvm
         run: |
           if [ -e /dev/kvm ]; then
-            echo "/dev/kvm exists ✅"
+            echo "/dev/kvm exists"
           else
-            echo "::error::/dev/kvm not found ❌"
+            echo "::error::/dev/kvm not found"
             exit 1
           fi
 
-      - name: Check loaded kvm modules
+      - name: Check loaded KVM modules
         run: |
+          echo "Loaded KVM modules:"
           lsmod | grep kvm || echo "::warning::KVM modules not loaded"
 
-      - name: Check nested virtualization (Intel)
+      - name: Check nested virtualization
         run: |
           if [ -f /sys/module/kvm_intel/parameters/nested ]; then
-            echo "Nested virt (Intel): $(cat /sys/module/kvm_intel/parameters/nested)"
+            echo "Nested virtualization (Intel): $(cat /sys/module/kvm_intel/parameters/nested)"
           elif [ -f /sys/module/kvm_amd/parameters/nested ]; then
-            echo "Nested virt (AMD): $(cat /sys/module/kvm_amd/parameters/nested)"
+            echo "Nested virtualization (AMD): $(cat /sys/module/kvm_amd/parameters/nested)"
           else
             echo "::warning::Nested virtualization parameter not found"
           fi
 
-      - name: Test QEMU + KVM launch
+      - name: Install QEMU
+        run: sudo apt update && sudo apt install -y qemu-kvm qemu-system-x86
+
+      - name: Test QEMU with KVM
         run: |
           if command -v qemu-system-x86_64 > /dev/null; then
+            echo "QEMU installed:"
             qemu-system-x86_64 -enable-kvm --version
           else
             echo "::error::QEMU not installed"
             exit 1
           fi
+
+      - name: Launch dummy QEMU VM
+        run: |
+          echo "Attempting to launch dummy QEMU VM..."
+          qemu-system-x86_64 \
+            -enable-kvm \
+            -m 256 \
+            -nographic \
+            -kernel /dev/zero \
+            -append "console=ttyS0" \
+            -no-reboot \
+            -no-shutdown \
+            -smp 1 \
+            -cpu host \
+            -device virtio-rng-pci \
+            -serial mon:stdio \
+            -display none \
+            -nodefaults \
+            -accel kvm || echo "::warning::Dummy VM launch failed"
 
